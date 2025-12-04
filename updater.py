@@ -17,6 +17,7 @@ def load_config():
         "show_update_message": True,
         "update_message_title": "Updating to the latest version",
         "update_message_body": "A new version of the application is available: {version}",
+        "preserve_files": [],
     }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -27,6 +28,14 @@ def load_config():
         raise RuntimeError(f"Configuration file is invalid JSON: {exc}") from exc
 
     config = {**defaults, **user_config}
+
+    preserve_files = config.get("preserve_files")
+    if preserve_files is None:
+        config["preserve_files"] = []
+    elif not isinstance(preserve_files, list):
+        raise RuntimeError("preserve_files must be a list of relative paths")
+    elif any(item is not None and not isinstance(item, str) for item in preserve_files):
+        raise RuntimeError("preserve_files entries must be strings")
 
     required_keys = [
         "owner",
@@ -57,6 +66,7 @@ VERSIONS_DIR_NAME = CONFIG["versions_dir_name"]
 SHOW_UPDATE_MESSAGE = bool(CONFIG.get("show_update_message"))
 UPDATE_MESSAGE_TITLE = CONFIG.get("update_message_title", "")
 UPDATE_MESSAGE_BODY = CONFIG.get("update_message_body", "")
+PRESERVE_FILES = CONFIG.get("preserve_files", [])
 
 API_LATEST_URL = f"https://api.github.com/repos/{OWNER}/{REPO}/releases/latest"
 STATE_FILE = os.path.join(INSTALL_ROOT, CONFIG["state_filename"])
@@ -145,6 +155,76 @@ def cleanup_old_versions(preserve_paths):
         if os.path.normcase(os.path.normpath(candidate)) in preserve_abs:
             continue
         shutil.rmtree(candidate, ignore_errors=True)
+
+
+def copy_preserved_items(previous_rel_path, new_rel_path, preserve_list):
+    """Copy configured files/dirs from the previous install into the new one."""
+    if not previous_rel_path or not preserve_list:
+        return
+
+    prev_root = os.path.join(INSTALL_ROOT, previous_rel_path)
+    new_root = os.path.join(INSTALL_ROOT, new_rel_path)
+
+    if not os.path.isdir(prev_root) or not os.path.isdir(new_root):
+        return
+
+    new_root_abs = os.path.normcase(os.path.abspath(new_root))
+    prev_root_abs = os.path.normcase(os.path.abspath(prev_root))
+
+    def _is_within(path, root):
+        try:
+            return os.path.commonpath([path, root]) == root
+        except ValueError:
+            return False
+
+    for rel_path in preserve_list:
+        if not rel_path:
+            continue
+
+        norm_rel = os.path.normpath(rel_path)
+        if norm_rel in (".", ""):
+            continue
+        if os.path.isabs(norm_rel) or norm_rel.startswith(".."):
+            print(f"Skipping unsafe preserve path: {rel_path}", file=sys.stderr)
+            continue
+
+        src = os.path.join(prev_root, norm_rel)
+        dest = os.path.join(new_root, norm_rel)
+
+        src_abs = os.path.normcase(os.path.abspath(src))
+        dest_abs = os.path.normcase(os.path.abspath(dest))
+
+        if not _is_within(src_abs, prev_root_abs):
+            print(
+                f"Skipping preserve path outside previous install: {rel_path}",
+                file=sys.stderr,
+            )
+            continue
+        if not _is_within(dest_abs, new_root_abs):
+            print(
+                f"Skipping preserve path outside new install: {rel_path}",
+                file=sys.stderr,
+            )
+            continue
+        if not os.path.exists(src):
+            continue
+
+        dest_parent = os.path.dirname(dest)
+        if dest_parent and not os.path.isdir(dest_parent):
+            os.makedirs(dest_parent, exist_ok=True)
+
+        if os.path.isdir(src):
+            if os.path.isdir(dest):
+                shutil.rmtree(dest, ignore_errors=True)
+            elif os.path.isfile(dest):
+                os.remove(dest)
+            shutil.copytree(src, dest)
+        else:
+            if os.path.isdir(dest):
+                shutil.rmtree(dest, ignore_errors=True)
+            elif os.path.isfile(dest):
+                os.remove(dest)
+            shutil.copy2(src, dest)
 
 
 def get_latest_release(token=None):
@@ -237,6 +317,7 @@ def ensure_latest_installed():
         tmp_zip_path = os.path.join(tmp_dir, "app.zip")
         download_zip(download_url, tmp_zip_path, token=token)
         extract_zip(tmp_zip_path, target_dir)
+        copy_preserved_items(current_path, relative_dir, PRESERVE_FILES)
 
     # Save state pointing to the new version
     save_state(latest_version, relative_dir)
