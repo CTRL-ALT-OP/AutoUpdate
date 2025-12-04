@@ -1,5 +1,5 @@
 {
-  "owner": "CTRL-ALT-OP",
+  "owner": "CTRL-ALT-OP", 
   "repo": "TestRepo",
   "asset_name": "myapp-win-x64.zip",
   "main_exe_name": "main.exe",
