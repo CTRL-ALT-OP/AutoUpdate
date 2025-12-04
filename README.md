@@ -1,6 +1,6 @@
 Auto-updater based on pulling the latest release from a GitHub repo.
 
-data.json
+#### data.json
 ```js
 {
   "owner": "CTRL-ALT-OP", // The name of the owner of the repo
