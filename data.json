@@ -1,0 +1,12 @@
+{
+  "owner": "CTRL-ALT-OP",
+  "repo": "TestRepo",
+  "asset_name": "myapp-win-x64.zip",
+  "main_exe_name": "main.exe",
+  "state_filename": "state.json",
+  "versions_dir_name": "versions",
+  "version_dir_prefix": "app-",
+  "show_update_message": true,
+  "update_message_title": "Updating to the latest version",
+  "update_message_body": "A new version of the application is available: {version}"
+}
